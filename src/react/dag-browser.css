@@ -1,0 +1,48 @@
+.dbw-root {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #1f2937;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
+}
+
+/* Collapse via grid-template-rows 0fr <-> 1fr — no JS height measurement. */
+.dbw-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dbw-anim, 220ms) ease;
+}
+.dbw-collapse.dbw-open {
+  grid-template-rows: 1fr;
+}
+.dbw-collapse-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.dbw-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 0;
+  min-height: 22px;
+  white-space: nowrap;
+}
+
+.dbw-name {
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* Cross-reference links ("★ also under", "↳ reveal at"). */
+.dbw-xref {
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.dbw-xref:hover {
+  text-decoration: underline;
+  color: #7c2d12;
+}
