@@ -1,5 +1,10 @@
 # dag-browser-widget
 
+[![npm](https://img.shields.io/npm/v/dag-browser-widget)](https://www.npmjs.com/package/dag-browser-widget)
+[![license](https://img.shields.io/npm/l/dag-browser-widget)](./LICENSE)
+
+**[Live demo →](https://sigfried.github.io/dag-browser-widget/)**
+
 Browse a **DAG (polyhierarchy)** as a collapsible tree. A node that legitimately
 lives under several parents is unfolded once in full; its other parents become
 compact **"★ also under …"** links instead of duplicate subtrees. Selected nodes
@@ -20,7 +25,12 @@ The package is two layers:
 npm install dag-browser-widget
 ```
 
-`react` and `react-dom` (>=18) are peer dependencies.
+`react` and `react-dom` (>=18) are peer dependencies. Import the stylesheet once
+in your app:
+
+```ts
+import 'dag-browser-widget/styles.css'
+```
 
 ## Quick start
 
