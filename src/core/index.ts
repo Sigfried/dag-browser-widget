@@ -11,6 +11,7 @@ export {
   computeVisible,
   computeToggleState,
   decorateRows,
+  descendantPosIdxs,
   type RailKind,
   type ToggleState,
   type ForceVisibleSet,

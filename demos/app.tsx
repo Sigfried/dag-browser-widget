@@ -91,8 +91,8 @@ export function App() {
         {demo.blurb}
       </p>
 
+      {/* No key needed: the widget restarts itself when `nodes` changes. */}
       <DagBrowser
-        key={demoKey}
         nodes={demo.nodes}
         selected={selected}
         renderRow={renderRow}
@@ -101,6 +101,19 @@ export function App() {
       <p style={{ fontSize: 12, color: '#6b7280', marginTop: 16 }}>
         Selected: {selected.length ? selected.join(', ') : '(none)'}
       </p>
+
+      {demo.credit && (
+        <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 8 }}>
+          <a
+            href={demo.credit.href}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: '#9ca3af' }}
+          >
+            {demo.credit.text}
+          </a>
+        </p>
+      )}
     </div>
   )
 }

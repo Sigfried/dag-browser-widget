@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, type CSSProperties } from 'react'
 import type { RailKind, ToggleState } from '../core'
 
 export const RAIL_CELL_WIDTH = 18
@@ -79,18 +79,62 @@ type TogglePillProps = {
   count: number
   title?: string
   onClick?: () => void
+  // When provided, a double-click fires this instead of onClick. The single
+  // click is delayed briefly so a pending double-click can cancel it.
+  onDoubleClick?: () => void
 }
 
-export function TogglePill({ state, count, title, onClick }: TogglePillProps) {
+const DBLCLICK_MS = 220
+
+export function TogglePill({
+  state,
+  count,
+  title,
+  onClick,
+  onDoubleClick,
+}: TogglePillProps) {
+  // Pending single-click timer, so a double-click can cancel it.
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (clickTimer.current) clearTimeout(clickTimer.current)
+    },
+    [],
+  )
+
   if (state === 'leaf') return null
   const arrow = state === 'expanded' ? '▼' : state === 'partial' ? '▷' : '▶'
   const isPartial = state === 'partial'
   const isExpanded = state === 'expanded'
   const isDisabled = state === 'disabled'
+
+  const handleClick = () => {
+    if (isDisabled || !onClick) return
+    if (!onDoubleClick) {
+      onClick() // no double-click handler -> act immediately
+      return
+    }
+    if (clickTimer.current) clearTimeout(clickTimer.current)
+    clickTimer.current = setTimeout(() => {
+      clickTimer.current = null
+      onClick()
+    }, DBLCLICK_MS)
+  }
+
+  const handleDoubleClick = () => {
+    if (isDisabled || !onDoubleClick) return
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current) // cancel the pending single click
+      clickTimer.current = null
+    }
+    onDoubleClick()
+  }
+
   return (
     <span
       title={title}
-      onClick={isDisabled ? undefined : onClick}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

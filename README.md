@@ -66,10 +66,26 @@ The boundary between you (the consumer) and the widget is deliberately small:
 You **never** manipulate the widget's internal visibility directly. You pass
 `selected`, and the widget:
 
-1. opens the path from a root down to each selected node on mount (and again
-   whenever `selected` changes), and
-2. shows a **"↳ reveal at …"** breadcrumb on the closest visible ancestor of any
-   selected node you later collapse off-screen — so a selection is never lost.
+1. always shows every root (top-level node),
+2. on mount, opens the path from a root down to each selected node, and
+3. shows a **"↳ reveal at …"** breadcrumb on the closest visible ancestor of any
+   selected node that is currently collapsed off-screen — so a selection set
+   from outside (a URL param, an external list) is never lost.
+
+Changing `selected` at runtime updates the highlight and the reveal-at links but
+**does not reset** the user's expand/collapse state. (In practice you select by
+clicking a visible row, so there's nothing to reveal; the reveal-at breadcrumb
+is for selections that arrive from outside the widget.) With no `selected`, the
+widget opens at `levelsExpanded` levels (default: roots' children shown).
+
+### Expanding rows
+
+Each row's toggle pill (`▶`/`▷`/`▼`) controls its children:
+
+- **Click** — expand one level (show direct children) or collapse.
+- **Double-click** — expand the **entire subtree** below that row, when it runs
+  deeper than its direct children. The tooltip shows the descendant count, e.g.
+  *"Click: show 4 children · double-click: show all 11"*.
 
 ### Highlighting is your job
 
@@ -98,13 +114,25 @@ semantics — all of which differ per app.
 
 | Prop | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `nodes` | `Node[]` | — | The DAG. |
+| `nodes` | `Node[]` | — | The DAG. Changing the array identity restarts the widget (see below). |
 | `selected` | `string[]` | `[]` | Node ids your app cares about (see above). |
 | `renderRow` | `(ctx: RenderRowContext) => ReactNode` | name only | Renders each row's body. |
+| `levelsExpanded` | `number` | `1` | How many levels to open on mount. `1` shows the roots' children; `0` = all collapsed. Initial-state only. |
 | `animationMs` | `number` | `220` | Collapse/expand duration; `0` disables. |
 | `className` | `string` | — | Added to the root element. |
 
 `RenderRowContext` = `{ node, isSelected, toggleState, depth }`.
+
+### `nodes` changes restart the widget
+
+A new `nodes` array means "different data — start over": the widget remounts and
+re-seeds from scratch, discarding the current expand/collapse state. So pass a
+**stable / memoized `nodes`** and only build a new array when the data actually
+changes (rebuilding it every render would reset the widget every render). You do
+*not* need a React `key` for this — the widget keys itself internally.
+
+Changing `selected` or `levelsExpanded`, by contrast, never resets anything the
+user has opened.
 
 ## Using the core without React
 
@@ -142,6 +170,9 @@ Two demos: a **music-genre DAG** (multi-parent genres show the "★ also under"
 de-duplication) and a plain **file tree** (shows the widget degrades to an
 ordinary collapsible tree when the data has no multi-parent nodes).
 
+The genre demo's data is derived from [MusicBrainz](https://musicbrainz.org/genres),
+whose core data is public domain ([CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)).
+
 ## Develop
 
 ```bash
@@ -162,4 +193,11 @@ touching the visibility logic.
 
 ## License
 
-GPL-3.0-or-later.
+GPL-3.0-or-later (see [LICENSE](./LICENSE)).
+
+If the copyleft terms don't fit your use, I'm happy to discuss alternatives — I
+can grant an individual/commercial license, or relicense the whole project under
+a permissive license (Apache-2.0 / MIT) on request. Open an issue or reach out.
+
+> The MusicBrainz-derived genre data used in the demo is public domain (CC0) and
+> is not affected by this license.

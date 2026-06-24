@@ -5,6 +5,7 @@ import {
   computeToggleState,
   computeVisible,
   decorateRows,
+  descendantPosIdxs,
 } from './visibility'
 
 //   A                 B
@@ -87,6 +88,45 @@ describe('computeVisible', () => {
     )
     const names = [...visible].map(i => unfolding[i].nodeId).sort()
     expect(names).toEqual(['A', 'C', 'D']) // C bridges A and D
+  })
+})
+
+describe('descendantPosIdxs', () => {
+  it('returns the whole subtree under a path (DFS-contiguous)', () => {
+    const { unfolding, pos } = setup()
+    const aPos = pos('A') // A -> C -> D, and A -> E
+    const names = descendantPosIdxs(aPos, unfolding).map(
+      i => unfolding[i].nodeId,
+    )
+    expect(names).toEqual(['C', 'D', 'E'])
+  })
+
+  it('is empty for a leaf', () => {
+    const { unfolding, pos } = setup()
+    expect(descendantPosIdxs(pos('E'), unfolding)).toEqual([])
+  })
+
+  it('covers only this copy’s subtree, not other copies elsewhere', () => {
+    const { unfolding, pos } = setup()
+    // C under B has its own D copy; C under A has a different D copy.
+    const cUnderB = pos('C', 1)
+    const sub = descendantPosIdxs(cUnderB, unfolding).map(
+      i => unfolding[i].nodeId,
+    )
+    expect(sub).toEqual(['D'])
+  })
+})
+
+describe('decorateRows — descendantCount', () => {
+  it('counts distinct descendant nodes below each row', () => {
+    const { graph, unfolding, pos } = setup()
+    const aPos = pos('A')
+    const visible = computeVisible(unfolding, new Set([aPos]), new Set([aPos]))
+    const rows = decorateRows(unfolding, visible, graph)
+    // A's subtree under this path: C, D, E -> 3 distinct nodes.
+    expect(rows.find(r => r.nodeId === 'A')!.descendantCount).toBe(3)
+    // E is a leaf.
+    expect(rows.find(r => r.nodeId === 'E')!.descendantCount).toBe(0)
   })
 })
 

@@ -1,15 +1,10 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ancestorPath,
   buildGraph,
   computeVisible,
   decorateRows,
+  descendantPosIdxs,
   fullUnfolding,
   seedFromSelected,
   type DecoratedRow,
@@ -44,6 +39,12 @@ export type DagBrowserProps = {
   selected?: string[]
   /** Renders the body of each row (name, badges, buttons, highlight, …). */
   renderRow?: (ctx: RenderRowContext) => ReactNode
+  /**
+   * How many levels to expand on mount. 1 (default) reveals the roots' direct
+   * children; 0 leaves everything collapsed. Initial-state only — changing it
+   * later does not re-collapse what the user has opened.
+   */
+  levelsExpanded?: number
   /** Collapse/expand animation duration in ms. 0 disables animation. */
   animationMs?: number
   className?: string
@@ -51,10 +52,25 @@ export type DagBrowserProps = {
 
 const EMPTY: string[] = []
 
-export default function DagBrowser({
+// A change of `nodes` means "different data — start over". We express that by
+// remounting: the outer component keys the inner impl on the `nodes` array
+// identity, so a new array throws the old instance (and all its expand/collapse
+// state) away and mounts a fresh one. Nothing inside ever has to detect or
+// react to a nodes change. (Pass a stable/memoized `nodes`, per React norms;
+// rebuilding it every render would remount every render.)
+export default function DagBrowser(props: DagBrowserProps) {
+  const keyRef = useRef({ nodes: props.nodes, key: 0 })
+  if (keyRef.current.nodes !== props.nodes) {
+    keyRef.current = { nodes: props.nodes, key: keyRef.current.key + 1 }
+  }
+  return <DagBrowserImpl key={keyRef.current.key} {...props} />
+}
+
+function DagBrowserImpl({
   nodes,
   selected = EMPTY,
   renderRow,
+  levelsExpanded = 1,
   animationMs = 220,
   className,
 }: DagBrowserProps) {
@@ -63,23 +79,19 @@ export default function DagBrowser({
 
   const selectedSet = useMemo(() => new Set(selected), [selected])
 
-  // Initial / on-selection-change state: open the path to each selected node.
-  // The user can collapse from there. Re-seeding on `selected` change matches
-  // synapse's "reset when the anchor changes" behavior.
-  const seed = useMemo(
-    () => seedFromSelected(unfolding, selectedSet),
-    [unfolding, selectedSet],
+  // Seed ONCE, at mount. `nodes` is stable for this instance's lifetime (the
+  // outer component remounts on a nodes change), so there is no re-seed effect
+  // and seeding never fights the user's manual expand/collapse. `selected` and
+  // `levelsExpanded` are read here only for the initial picture; changing them
+  // later does not re-seed.
+  const [seed] = useState(() =>
+    seedFromSelected(unfolding, selectedSet, levelsExpanded),
   )
 
   const [forceVisible, setForceVisible] = useState<ForceVisibleSet>(
-    () => seed.forceVisible,
+    seed.forceVisible,
   )
-  const [expanded, setExpanded] = useState<ExpandedSet>(() => seed.expanded)
-
-  useEffect(() => {
-    setForceVisible(seed.forceVisible)
-    setExpanded(seed.expanded)
-  }, [seed])
+  const [expanded, setExpanded] = useState<ExpandedSet>(seed.expanded)
 
   const visible = useMemo(
     () => computeVisible(unfolding, forceVisible, expanded),
@@ -156,6 +168,18 @@ export default function DagBrowser({
     // leaf, disabled: no-op
   }
 
+  // Expand this row and its entire subtree (every descendant under this path).
+  function handleExpandAll(posIndex: number) {
+    const descendants = descendantPosIdxs(posIndex, unfolding)
+    if (descendants.length === 0) return // leaf: nothing to expand
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.add(posIndex)
+      for (const d of descendants) next.add(d)
+      return next
+    })
+  }
+
   // Reveal a hidden copy (clicked from an also-under / reveal-at link): pin it.
   function reveal(targetPosIdx: number) {
     setForceVisible(prev => withAdded(prev, targetPosIdx))
@@ -184,6 +208,7 @@ export default function DagBrowser({
               isSelected={selectedSet.has(row.nodeId)}
               renderRow={renderRow}
               onToggle={() => handleToggle(row.posIndex, row.toggleState)}
+              onExpandAll={() => handleExpandAll(row.posIndex)}
               onReveal={reveal}
             />
           </CollapsibleRow>
@@ -222,6 +247,7 @@ function Row({
   isSelected,
   renderRow,
   onToggle,
+  onExpandAll,
   onReveal,
 }: {
   row: DecoratedRow
@@ -229,6 +255,7 @@ function Row({
   isSelected: boolean
   renderRow?: (ctx: RenderRowContext) => ReactNode
   onToggle: () => void
+  onExpandAll: () => void
   onReveal: (targetPosIdx: number) => void
 }) {
   const name = node?.name ?? row.nodeId
@@ -252,8 +279,11 @@ function Row({
       <TogglePill
         state={row.toggleState}
         count={row.childCount}
-        title={toggleTooltip(row, name)}
+        title={toggleTooltip(row)}
         onClick={onToggle}
+        onDoubleClick={
+          row.descendantCount > row.childCount ? onExpandAll : undefined
+        }
       />
       {body}
       <LinkList
@@ -272,20 +302,24 @@ function Row({
   )
 }
 
-function toggleTooltip(row: DecoratedRow, name: string): string {
-  switch (row.toggleState) {
+function toggleTooltip(row: DecoratedRow): string {
+  const { childCount, descendantCount, toggleState } = row
+  // "double-click: show all N" only when the subtree runs deeper than the
+  // direct children (otherwise expand-all and expand-children are identical).
+  const deeper = descendantCount > childCount
+  const allHint = deeper ? ` · double-click: show all ${descendantCount}` : ''
+  const children = `${childCount} child${childCount === 1 ? '' : 'ren'}`
+  switch (toggleState) {
     case 'leaf':
       return ''
     case 'disabled':
       return 'No children'
     case 'collapsed':
-      return `Click to show ${name}'s ${row.childCount} child${
-        row.childCount === 1 ? '' : 'ren'
-      }`
+      return `Click: show ${children}${allHint}`
     case 'expanded':
-      return 'Click to collapse'
+      return `Click: collapse${allHint}`
     case 'partial':
-      return `Showing only part of the subtree. Click to expand all ${row.childCount} children`
+      return `Click: show ${children}${allHint}`
   }
 }
 

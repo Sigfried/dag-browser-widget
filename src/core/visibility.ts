@@ -131,6 +131,10 @@ export type DecoratedRow = {
   renderDepth: number
   toggleState: ToggleState
   childCount: number
+  // Number of DISTINCT descendant nodes reachable below this row (under this
+  // path). >= childCount; equals childCount when all children are leaves. Used
+  // for the "expand all N descendants" affordance.
+  descendantCount: number
   alsoUnderPaths: AlsoUnderLink[]
   rails: RailKind[]
   // For each selected node that is hidden but has a copy in this row's subtree,
@@ -249,6 +253,10 @@ export function decorateRows(
     const childCount = graph.children(row.nodeId).length
     const visibleChildCount = (visibleChildren.get(posIdx) ?? []).length
     const toggleState = computeToggleState(childCount, visibleChildCount)
+    const descendants = descendantPosIdxs(posIdx, unfolding)
+    const descendantCount = new Set(
+      descendants.map(i => unfolding[i].nodeId),
+    ).size
 
     decorated.push({
       posIndex: posIdx,
@@ -257,6 +265,7 @@ export function decorateRows(
       renderDepth,
       toggleState,
       childCount,
+      descendantCount,
       alsoUnderPaths,
       rails,
       revealAt: [],
@@ -298,6 +307,23 @@ export function decorateRows(
   }
 
   return decorated
+}
+
+// All posIdxs strictly below `posIdx` in the unfolding (its whole subtree under
+// THIS path — not other copies of the same node elsewhere). The unfolding is
+// DFS pre-order, so the subtree is the contiguous block of rows after `posIdx`
+// whose depth exceeds it, ending at the first row that is not deeper.
+export function descendantPosIdxs(
+  posIdx: number,
+  unfolding: UnfoldingRow[],
+): number[] {
+  const out: number[] = []
+  const baseDepth = unfolding[posIdx].depth
+  for (let i = posIdx + 1; i < unfolding.length; i++) {
+    if (unfolding[i].depth <= baseDepth) break
+    out.push(i)
+  }
+  return out
 }
 
 function isAncestor(

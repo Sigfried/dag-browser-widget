@@ -51,6 +51,27 @@ These were settled deliberately (see git history / the original handoff):
   The seeding and reveal-at logic loop over the set.
 - **Keep `forceVisible` + path-protection.** It's the mechanism behind "keep
   this node and its path to root open while everything else collapses."
+- **Seeding always shows all roots; runs once at mount.** `seedFromSelected`
+  force-visibles every root, expands the top `levelsExpanded` levels (default 1
+  at the view), and opens the path to each selected node. It is INITIAL-only:
+  `DagBrowserImpl` seeds via a `useState` initializer with no re-seed effect.
+- **`nodes` change = remount, not an effect.** The exported `DagBrowser` is a
+  thin shell that keys `DagBrowserImpl` on the `nodes` array identity; a new
+  array throws the instance away and remounts fresh. So nothing inside ever
+  detects "nodes changed" — and under a future lazy unfolder, an unfolding that
+  grows on expand will NOT trigger a reset (the trigger is the `nodes` ref, not
+  the unfolding). Consumers pass a stable/memoized `nodes`; no React `key`
+  needed on their side.
+- **Changing `selected` never resets expand/collapse.** Selection flows to
+  `renderRow` (highlight) and `decorateRows` (reveal-at links) only. It does not
+  re-seed. Selecting happens by clicking a visible row, so there's nothing to
+  reveal; reveal-at exists for selections set from OUTSIDE the widget.
+- **`levelsExpanded` (default 1)** opens the top N levels at mount; initial-only.
+- **Expand-all via double-click.** Single click on a toggle = expand one level
+  / collapse. Double-click = expand the whole subtree (`handleExpandAll` adds
+  the row + `descendantPosIdxs(...)` to `expanded`). `TogglePill` debounces the
+  single click (`DBLCLICK_MS`) so a pending double-click cancels it. The
+  double-click affordance only appears when `descendantCount > childCount`.
 - **Keep reveal-at.** When a selected node is collapsed off-screen, its closest
   visible ancestor gets a "↳ reveal at …" link (clicking pins the hidden copy).
   This already existed in core; it is the breadcrumb back. Don't drop it.
@@ -81,7 +102,9 @@ reference synapse or any consuming app.
 - The core has zero view/DOM imports — keep it that way. If you need a view
   type in core, define it in core (don't import from `src/react/`).
 - Demos (`demos/`) use **public, non-informatics data** only. At least one demo
-  must be a true DAG so the "★ also under" de-duplication is visible.
+  must be a true DAG so the "★ also under" de-duplication is visible. The genre
+  demo's relationships come from MusicBrainz genre data (CC0); `parentIds`
+  combines its "subgenre of" + "fusion of" edges (fusion = multi-parent).
 
 ## Commands
 
