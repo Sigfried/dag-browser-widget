@@ -25,10 +25,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
       - run: npm ci
       - name: Build demo
-        # Served from /dag-browser-widget/ on project Pages.
-        run: DEMO_BASE=/dag-browser-widget/ npm run build:demo
+        # base_path is the project subpath GitHub serves Pages from
+        # (e.g. /dag-browser-widget/), derived automatically.
+        run: DEMO_BASE='${{ steps.pages.outputs.base_path }}/' npm run build:demo
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist-demo
