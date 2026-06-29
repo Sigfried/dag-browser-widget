@@ -5,10 +5,13 @@
 
 **[Live demo →](https://sigfried.github.io/dag-browser-widget/)**
 
-Browse a **DAG (polyhierarchy)** as a collapsible tree. A node that legitimately
-lives under several parents is unfolded once in full; its other parents become
-compact **"★ also under …"** links instead of duplicate subtrees. Selected nodes
-that scroll off-screen after a collapse get a **"↳ reveal at …"** breadcrumb back.
+Browse a **DAG (polyhierarchy)** — or any **directed graph, cycles included** —
+as a collapsible tree. A node that legitimately lives under several parents is
+unfolded once in full; its other parents become compact **"★ also under …"**
+links instead of duplicate subtrees. When an edge loops back to a node already
+on the path (a cycle, including a self-loop), that edge becomes a **"⟲ loops
+back to …"** marker instead of recursing forever. Selected nodes that scroll
+off-screen after a collapse get a **"↳ reveal at …"** breadcrumb back.
 
 The package is two layers:
 
@@ -129,9 +132,39 @@ semantics — all of which differ per app.
 | `renderRow` | `(ctx: RenderRowContext) => ReactNode` | name only | Renders each row's body. |
 | `levelsExpanded` | `number` | `1` | How many levels to open on mount. `1` shows the roots' children; `0` = all collapsed. Initial-state only. |
 | `animationMs` | `number` | `220` | Collapse/expand duration; `0` disables. |
+| `onMessage` | `(msg: DagBrowserMessage) => void` | — | Feedback when a cross-ref link is followed (see below). |
 | `className` | `string` | — | Added to the root element. |
 
-`RenderRowContext` = `{ node, isSelected, toggleState, depth }`.
+`RenderRowContext` = `{ node, isSelected, toggleState, depth, backedge? }`.
+`backedge` is `{ path, selfLoop }` on a cycle row (else `undefined`), so a custom
+`renderRow` can style loop-back rows itself.
+
+### Cross-reference links: arrows and `onMessage`
+
+The italic links on a row — **"★ also under …"**, **"⟲ loops back to …"**,
+**"↳ reveal at …"** — all point at another copy/ancestor of that node elsewhere
+in the tree. Two affordances help you see and follow them:
+
+- **Hover** a row (or a single link) to draw a transient curved **arrow** from
+  the row to its target(s). Hovering the row body shows every arrow that row
+  has at once; hovering one link shows just that one. The arrows are drawn on
+  hover and cleared on leave — no persistent layout tracking.
+- **Click** a link to follow it. If the target is off-screen it's pinned
+  visible, scrolled to, and flashed; if it's already on screen the click just
+  scrolls+flashes it (so it never looks like a dead click). Pass `onMessage` to
+  substitute your own feedback (a toast/snackbar) — when you do, the built-in
+  flash is suppressed so feedback isn't doubled. The widget still scrolls the
+  target into view either way.
+
+```ts
+type DagBrowserMessage = {
+  kind: 'already-visible' | 'revealed' // was the target already on screen?
+  targetId: string                     // node id of the target copy
+  targetPosIdx: number                 // its position in the unfolding
+  targetPath: string                   // slash-joined path shown on the link
+  direction: 'up' | 'down'             // is the target above or below the click?
+}
+```
 
 ### `nodes` changes restart the widget
 
@@ -176,9 +209,11 @@ npm install
 npm run dev      # opens the demo app
 ```
 
-Two demos: a **music-genre DAG** (multi-parent genres show the "★ also under"
-de-duplication) and a plain **file tree** (shows the widget degrades to an
-ordinary collapsible tree when the data has no multi-parent nodes).
+Three demos: a **music-genre DAG** (multi-parent genres show the "★ also under"
+de-duplication), a plain **file tree** (shows the widget degrades to an ordinary
+collapsible tree when the data has no multi-parent nodes), and a **cyclic
+dependency graph** (packages that depend on each other, plus a self-loop, show
+the "⟲ loops back to …" markers).
 
 The genre demo's data is derived from [MusicBrainz](https://musicbrainz.org/genres),
 whose core data is public domain ([CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)).
@@ -200,6 +235,15 @@ very high fan-in could blow up the path count — the visibility layer is
 decoupled from *how* rows are produced (`decorateRows` only needs rows with a
 `parentIdx`), so a lazy/bounded unfolder can be dropped in later without
 touching the visibility logic.
+
+**Cycles are safe.** The unfolder never recurses into a node already on the
+current root-to-here path; instead it emits a single leaf back-edge row (a
+`⟲ loops back to …` marker) pointing at the ancestor it would have re-entered.
+So a self-loop or a long cycle adds exactly one marker row per back-edge, not an
+infinite descent. A strongly-connected component with no parentless entry point
+(nothing outside it points in) would otherwise be unreachable from any root, so
+`buildGraph` promotes one node of each such orphaned component to a synthetic
+root — every node still renders.
 
 ## License
 

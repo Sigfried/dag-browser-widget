@@ -1,10 +1,31 @@
-import { useState } from 'react'
-import { DagBrowser, type RenderRowContext } from '../src'
+import { useRef, useState } from 'react'
+import {
+  DagBrowser,
+  type DagBrowserMessage,
+  type RenderRowContext,
+} from '../src'
 import { DEMOS, type DemoKey } from './data'
 
 export function App() {
   const [demoKey, setDemoKey] = useState<DemoKey>('genres')
   const demo = DEMOS[demoKey]
+
+  // Demo of the consumer-overridable click feedback. When the user clicks a
+  // cross-ref whose target is already on screen, the widget would otherwise
+  // look like it did nothing — here we surface a transient toast instead. (If
+  // we didn't pass onMessage, the widget would flash the target row itself.)
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function showToast(msg: DagBrowserMessage) {
+    const where = msg.direction === 'up' ? 'above ↑' : 'below ↓'
+    setToast(
+      msg.kind === 'already-visible'
+        ? `“${msg.targetPath}” is already shown ${where}`
+        : `Revealed “${msg.targetPath}” ${where}`,
+    )
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(null), 2200)
+  }
 
   // `selected` is owned by the consumer (this app), not the widget. The widget
   // opens the path to each selected node and shows reveal-at breadcrumbs for
@@ -96,11 +117,33 @@ export function App() {
         nodes={demo.nodes}
         selected={selected}
         renderRow={renderRow}
+        onMessage={showToast}
       />
 
       <p style={{ fontSize: 12, color: '#6b7280', marginTop: 16 }}>
         Selected: {selected.length ? selected.join(', ') : '(none)'}
       </p>
+
+      {toast && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#1f2937',
+            color: '#fff',
+            padding: '8px 14px',
+            borderRadius: 6,
+            fontSize: 13,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+            zIndex: 10,
+          }}
+        >
+          {toast}
+        </div>
+      )}
 
       {demo.credit && (
         <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 8 }}>

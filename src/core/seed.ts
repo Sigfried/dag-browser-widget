@@ -25,9 +25,11 @@ export function seedFromSelected(
     if (unfolding[i].depth < levelsExpanded) expanded.add(i)
   }
 
-  // First copy (lowest posIdx) per node id.
+  // First copy (lowest posIdx) per node id. Back-edge marker rows are not real
+  // copies, so they never seed a selection.
   const firstCopy = new Map<string, number>()
   for (let i = 0; i < unfolding.length; i++) {
+    if (unfolding[i].kind === 'backedge') continue
     const id = unfolding[i].nodeId
     if (!firstCopy.has(id)) firstCopy.set(id, i)
   }

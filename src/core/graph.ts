@@ -54,6 +54,45 @@ export function buildGraph(nodes: Node[]): Graph {
   const sortIds = (ids: string[]) =>
     ids.sort((a, b) => compareIds(byId[a], byId[b]))
   for (const p in childrenOf) sortIds(childrenOf[p])
+
+  // Rootless cycles: a strongly-connected component with no parentless entry
+  // (nothing outside it points in) is unreachable from any natural root, so it
+  // would vanish from the unfolding. Find such orphaned nodes by BFS from the
+  // current roots over the child edges, then promote the best representative of
+  // each orphaned region to a synthetic root so it still renders. "Best" = the
+  // node whose own present parents are all themselves orphaned (a true entry to
+  // the component), preferring lower compareIds order; falls back to the lowest
+  // unreached id if every node in the region has an external-looking parent.
+  const reached = new Set<string>()
+  const queue = [...roots]
+  while (queue.length) {
+    const id = queue.shift()!
+    if (reached.has(id)) continue
+    reached.add(id)
+    for (const c of childrenOf[id] ?? []) if (!reached.has(c)) queue.push(c)
+  }
+  const orphans = Object.keys(byId).filter(id => !reached.has(id))
+  while (orphans.some(id => !reached.has(id))) {
+    const stillOrphan = orphans.filter(id => !reached.has(id))
+    // Prefer an orphan all of whose parents are also still-orphaned — it's a
+    // genuine entry point to the unreached region, not mid-cycle.
+    const entries = stillOrphan.filter(id =>
+      (parentsOf[id] ?? []).every(p => !reached.has(p)),
+    )
+    const pick = (entries.length ? entries : stillOrphan).sort((a, b) =>
+      compareIds(byId[a], byId[b]),
+    )[0]
+    roots.push(pick)
+    // BFS from the new synthetic root to mark its whole region reached.
+    const q = [pick]
+    while (q.length) {
+      const id = q.shift()!
+      if (reached.has(id)) continue
+      reached.add(id)
+      for (const c of childrenOf[id] ?? []) if (!reached.has(c)) q.push(c)
+    }
+  }
+
   sortIds(roots)
 
   const depthOf: Record<string, number> = {}
@@ -93,23 +132,49 @@ export type UnfoldingRow = {
   pathToParent: string[]
   // Index of this row's parent row in the unfolding. -1 for roots.
   parentIdx: number
+  // 'node'    = an ordinary unfolded node row.
+  // 'backedge' = a cycle marker: this row's nodeId already appears as one of its
+  //   own ancestors on this path, so descending would loop. We emit a leaf
+  //   marker row instead of recursing. `backedgeTo` is the posIdx of that
+  //   ancestor row (for a self-loop A→A it's the immediate parent).
+  kind: 'node' | 'backedge'
+  // Only set when kind === 'backedge': the ancestor row this edge loops back to.
+  backedgeTo?: number
 }
 
 export function fullUnfolding(graph: Graph): UnfoldingRow[] {
   const out: UnfoldingRow[] = []
+  // posIdx of each ancestor on the current path, keyed by nodeId, so a back-edge
+  // can name the exact ancestor row it loops to.
+  const ancestorPos = new Map<string, number>()
+
   function walk(
     id: string,
     depth: number,
     pathToParent: string[],
     parentIdx: number,
   ) {
-    // The DAG isn't supposed to contain cycles, but if one slips through skip
-    // the recursive descent so we don't blow the stack.
-    if (pathToParent.includes(id)) return
+    // Cycle: this node already sits on the path from the root to here. Emit a
+    // leaf back-edge marker pointing at that ancestor row and do NOT recurse
+    // (which would loop forever / blow the stack). Covers self-loops (A→A: the
+    // ancestor is the immediate parent) too.
+    if (pathToParent.includes(id)) {
+      out.push({
+        nodeId: id,
+        depth,
+        pathToParent,
+        parentIdx,
+        kind: 'backedge',
+        backedgeTo: ancestorPos.get(id),
+      })
+      return
+    }
     const myIdx = out.length
-    out.push({ nodeId: id, depth, pathToParent, parentIdx })
+    out.push({ nodeId: id, depth, pathToParent, parentIdx, kind: 'node' })
     const nextPath = [...pathToParent, id]
+    ancestorPos.set(id, myIdx)
     for (const c of graph.children(id)) walk(c, depth + 1, nextPath, myIdx)
+    ancestorPos.delete(id)
   }
   for (const r of graph.roots) walk(r, 0, [], -1)
   return out

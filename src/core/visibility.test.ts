@@ -226,3 +226,51 @@ describe('decorateRows — revealAt (hidden selected node)', () => {
     expect(decorateRows(unfolding, new Set(), graph)).toEqual([])
   })
 })
+
+describe('decorateRows — cycle back-edges', () => {
+  // root → a → b → c → a   (the cycle a→b→c→a hangs off a real root)
+  const CYCLE: Node[] = [
+    { id: 'root', name: 'root', parentIds: [] },
+    { id: 'a', name: 'a', parentIds: ['root', 'c'] },
+    { id: 'b', name: 'b', parentIds: ['a'] },
+    { id: 'c', name: 'c', parentIds: ['b'] },
+  ]
+
+  it('decorates a back-edge row as a leaf with a loop-back link', () => {
+    const { graph, unfolding } = setup(CYCLE)
+    const all = new Set(unfolding.map((_, i) => i))
+    const rows = decorateRows(unfolding, all, graph)
+    const back = rows.find(r => r.backedge)
+    expect(back).toBeDefined()
+    expect(back!.toggleState).toBe('leaf')
+    expect(back!.childCount).toBe(0)
+    expect(back!.descendantCount).toBe(0)
+    // Loops back to the real unfolded 'a' row.
+    expect(unfolding[back!.backedge!.targetPosIdx].nodeId).toBe('a')
+    expect(back!.backedge!.selfLoop).toBe(false)
+    // Path names the ancestor it loops to (root → a), not the cycle traversal.
+    expect(back!.backedge!.path).toBe('root/a')
+  })
+
+  it('a back-edge is not counted as an also-under copy of the node', () => {
+    const { graph, unfolding } = setup(CYCLE)
+    const all = new Set(unfolding.map((_, i) => i))
+    const rows = decorateRows(unfolding, all, graph)
+    // The real unfolded 'a' row must NOT get an "also under" link pointing at
+    // the back-edge marker (that marker isn't a separate copy).
+    const realA = rows.find(r => r.nodeId === 'a' && !r.backedge)
+    expect(realA!.alsoUnderPaths).toEqual([])
+  })
+
+  it('flags a self-loop and targets the immediate parent', () => {
+    const { graph, unfolding } = setup([
+      { id: 'root', name: 'root', parentIds: [] },
+      { id: 'a', name: 'a', parentIds: ['root', 'a'] },
+    ])
+    const all = new Set(unfolding.map((_, i) => i))
+    const rows = decorateRows(unfolding, all, graph)
+    const back = rows.find(r => r.backedge)
+    expect(back!.backedge!.selfLoop).toBe(true)
+    expect(unfolding[back!.backedge!.targetPosIdx].nodeId).toBe('a')
+  })
+})
