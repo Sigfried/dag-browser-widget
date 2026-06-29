@@ -1,6 +1,6 @@
 {
   "name": "dag-browser-widget",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Dependency-free logic + a thin React view for browsing a DAG (polyhierarchy) as a collapsible tree, de-duplicating nodes that appear under multiple parents.",
   "type": "module",
   "license": "GPL-3.0-or-later",
