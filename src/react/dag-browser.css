@@ -37,6 +37,19 @@
   border-radius: 3px;
 }
 
+/* Cycle back-edge rows (a node that loops back to one of its ancestors). */
+.dbw-backedge {
+  opacity: 0.85;
+}
+.dbw-backedge-name {
+  font-style: italic;
+  color: #6b7280;
+}
+.dbw-backedge-note {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
 /* Cross-reference links ("★ also under", "↳ reveal at"). */
 .dbw-xref {
   cursor: pointer;

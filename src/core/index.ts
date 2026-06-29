@@ -18,6 +18,7 @@ export {
   type ExpandedSet,
   type AlsoUnderLink,
   type RevealAtLink,
+  type BackedgeLink,
   type DecoratedRow,
 } from './visibility'
 export { seedFromSelected } from './seed'

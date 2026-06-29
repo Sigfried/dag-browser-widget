@@ -124,6 +124,12 @@ export type RevealAtLink = {
   targetPosIdx: number // posIdx of the hidden selected copy — click to reveal it
 }
 
+export type BackedgeLink = {
+  path: string // slash-joined ancestor names down to the looped-back ancestor
+  targetPosIdx: number // posIdx of the ancestor row this edge loops to
+  selfLoop: boolean // true when the edge loops to the immediate parent (A→A)
+}
+
 export type DecoratedRow = {
   posIndex: number
   posKey: string
@@ -136,6 +142,8 @@ export type DecoratedRow = {
   // for the "expand all N descendants" affordance.
   descendantCount: number
   alsoUnderPaths: AlsoUnderLink[]
+  // Set only on back-edge (cycle) rows: where this edge loops back to.
+  backedge?: BackedgeLink
   rails: RailKind[]
   // For each selected node that is hidden but has a copy in this row's subtree,
   // the closest visible ancestor of that copy gets a reveal link. At most one
@@ -164,9 +172,12 @@ export function decorateRows(
   }
 
   // All copies of each node in the unfolding, keyed by nodeId. Used to find
-  // "other copies" for the alsoUnder links and hidden selected copies.
+  // "other copies" for the alsoUnder links and hidden selected copies. Back-edge
+  // marker rows are NOT copies — they loop to an ancestor that is itself a real
+  // copy — so they're excluded here.
   const posIdxsByNodeId = new Map<string, number[]>()
   for (let i = 0; i < unfolding.length; i++) {
+    if (unfolding[i].kind === 'backedge') continue
     const arr = posIdxsByNodeId.get(unfolding[i].nodeId)
     if (arr) arr.push(i)
     else posIdxsByNodeId.set(unfolding[i].nodeId, [i])
@@ -231,6 +242,32 @@ export function decorateRows(
     const rails = railsByRow[r]
     const renderDepth = rails.length
 
+    // Back-edge (cycle) rows are forced leaves: they never expand, count no
+    // children/descendants, and carry a link to the ancestor they loop to
+    // instead of also-under links.
+    if (row.kind === 'backedge') {
+      const target = row.backedgeTo ?? row.parentIdx
+      const chain = ancestorPath(target, unfolding)
+      decorated.push({
+        posIndex: posIdx,
+        posKey: String(posIdx),
+        nodeId: row.nodeId,
+        renderDepth,
+        toggleState: 'leaf',
+        childCount: 0,
+        descendantCount: 0,
+        alsoUnderPaths: [],
+        backedge: {
+          path: pathNames(chain),
+          targetPosIdx: target,
+          selfLoop: target === row.parentIdx,
+        },
+        rails,
+        revealAt: [],
+      })
+      continue
+    }
+
     // alsoUnderPaths: for each OTHER copy of this row's node in the unfolding,
     // derive its actual ancestor-chain path and a click target. Skips the
     // copy at the current row (i.e. skips this very position).
@@ -254,8 +291,12 @@ export function decorateRows(
     const visibleChildCount = (visibleChildren.get(posIdx) ?? []).length
     const toggleState = computeToggleState(childCount, visibleChildCount)
     const descendants = descendantPosIdxs(posIdx, unfolding)
+    // Back-edge marker rows aren't real descendant nodes (they loop to an
+    // ancestor), so they don't count toward "expand all N descendants".
     const descendantCount = new Set(
-      descendants.map(i => unfolding[i].nodeId),
+      descendants
+        .filter(i => unfolding[i].kind !== 'backedge')
+        .map(i => unfolding[i].nodeId),
     ).size
 
     decorated.push({

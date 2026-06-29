@@ -23,7 +23,11 @@ become "★ also under …" links rather than duplicated subtrees. Two layers:
    parent. Children/roots sorted by trailing-number-then-name.
 2. `fullUnfolding(graph)` → `UnfoldingRow[]`, a DFS pre-order list with **one
    row per path** to each node. A multi-parent node appears multiple times.
-   Each row knows its `parentIdx` (always a lower index — relied on everywhere).
+   Each row knows its `parentIdx` (always a lower index — relied on everywhere)
+   and a `kind`: `'node'` for an ordinary unfolded row, or `'backedge'` for a
+   cycle marker (a node that loops back to an ancestor on its own path). A
+   back-edge row carries `backedgeTo` (the ancestor row's posIdx) and is never
+   descended into — that's the cycle guard.
 3. `computeVisible(unfolding, forceVisible, expanded)` → set of visible posIdxs.
    A position is visible iff it's in `forceVisible`, or it's a path-protection
    bridge between two forceVisibles, or its parent is visible and expanded.
@@ -83,6 +87,22 @@ These were settled deliberately (see git history / the original handoff):
 - **Unfolding is eager now; the seam for lazy is preserved.** `decorateRows`
   /visibility only need rows with a `parentIdx`, so a lazy/bounded unfolder can
   drop in later. Don't build it now; don't wall it out.
+- **Cycles render as back-edge marker rows; don't drop the back-edge.** When a
+  child loops back to an ancestor on its own path, `fullUnfolding` emits a leaf
+  row with `kind: 'backedge'` + `backedgeTo` instead of recursing (the old code
+  silently dropped it). `decorateRows` makes it a forced leaf with a
+  `backedge: BackedgeLink` (`{ path, targetPosIdx, selfLoop }`); the view shows
+  a "⟲ loops back to …" link (or "self-loop" for A→A, where the target is the
+  immediate parent so there's no separate link). Back-edge rows are **not**
+  counted as node "copies" (no spurious "★ also under") and **not** counted in
+  `descendantCount`; `seedFromSelected`'s first-copy map skips them too. Keep all
+  of that — a back-edge is a reference, not a real second placement.
+- **Rootless cycles get a synthetic root.** A strongly-connected component with
+  no parentless entry is unreachable from any natural root, so `buildGraph`
+  promotes one node per orphaned component to a root (BFS reachability check
+  after the natural roots). Without this, such a component vanishes entirely.
+  With a single overall root (as the demos and most consumers use) this never
+  fires, but it's the safety net for arbitrary digraphs.
 
 ## Origin
 
@@ -104,7 +124,9 @@ reference synapse or any consuming app.
 - Demos (`demos/`) use **public, non-informatics data** only. At least one demo
   must be a true DAG so the "★ also under" de-duplication is visible. The genre
   demo's relationships come from MusicBrainz genre data (CC0); `parentIds`
-  combines its "subgenre of" + "fusion of" edges (fusion = multi-parent).
+  combines its "subgenre of" + "fusion of" edges (fusion = multi-parent). The
+  `deps` demo is a synthetic cyclic dependency graph (2-cycle, 3-hop cycle,
+  self-loop) so the "⟲ loops back to …" back-edge markers are visible.
 
 ## Commands
 

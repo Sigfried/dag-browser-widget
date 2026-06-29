@@ -5,10 +5,13 @@
 
 **[Live demo →](https://sigfried.github.io/dag-browser-widget/)**
 
-Browse a **DAG (polyhierarchy)** as a collapsible tree. A node that legitimately
-lives under several parents is unfolded once in full; its other parents become
-compact **"★ also under …"** links instead of duplicate subtrees. Selected nodes
-that scroll off-screen after a collapse get a **"↳ reveal at …"** breadcrumb back.
+Browse a **DAG (polyhierarchy)** — or any **directed graph, cycles included** —
+as a collapsible tree. A node that legitimately lives under several parents is
+unfolded once in full; its other parents become compact **"★ also under …"**
+links instead of duplicate subtrees. When an edge loops back to a node already
+on the path (a cycle, including a self-loop), that edge becomes a **"⟲ loops
+back to …"** marker instead of recursing forever. Selected nodes that scroll
+off-screen after a collapse get a **"↳ reveal at …"** breadcrumb back.
 
 The package is two layers:
 
@@ -176,9 +179,11 @@ npm install
 npm run dev      # opens the demo app
 ```
 
-Two demos: a **music-genre DAG** (multi-parent genres show the "★ also under"
-de-duplication) and a plain **file tree** (shows the widget degrades to an
-ordinary collapsible tree when the data has no multi-parent nodes).
+Three demos: a **music-genre DAG** (multi-parent genres show the "★ also under"
+de-duplication), a plain **file tree** (shows the widget degrades to an ordinary
+collapsible tree when the data has no multi-parent nodes), and a **cyclic
+dependency graph** (packages that depend on each other, plus a self-loop, show
+the "⟲ loops back to …" markers).
 
 The genre demo's data is derived from [MusicBrainz](https://musicbrainz.org/genres),
 whose core data is public domain ([CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)).
@@ -200,6 +205,15 @@ very high fan-in could blow up the path count — the visibility layer is
 decoupled from *how* rows are produced (`decorateRows` only needs rows with a
 `parentIdx`), so a lazy/bounded unfolder can be dropped in later without
 touching the visibility logic.
+
+**Cycles are safe.** The unfolder never recurses into a node already on the
+current root-to-here path; instead it emits a single leaf back-edge row (a
+`⟲ loops back to …` marker) pointing at the ancestor it would have re-entered.
+So a self-loop or a long cycle adds exactly one marker row per back-edge, not an
+infinite descent. A strongly-connected component with no parentless entry point
+(nothing outside it points in) would otherwise be unreachable from any root, so
+`buildGraph` promotes one node of each such orphaned component to a synthetic
+root — every node still renders.
 
 ## License
 

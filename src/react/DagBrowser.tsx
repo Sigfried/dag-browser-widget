@@ -26,6 +26,13 @@ export type RenderRowContext = {
   toggleState: DecoratedRow['toggleState']
   /** This row's render depth (number of visible ancestors). */
   depth: number
+  /**
+   * Set when this row is a cycle back-edge (the node loops back to one of its
+   * own ancestors). The default renderer shows a "⟲ loops back to …" marker;
+   * a custom renderRow can style it however it likes. `selfLoop` is true for a
+   * one-row A→A self-loop.
+   */
+  backedge?: { path: string; selfLoop: boolean }
 }
 
 export type DagBrowserProps = {
@@ -259,18 +266,24 @@ function Row({
   onReveal: (targetPosIdx: number) => void
 }) {
   const name = node?.name ?? row.nodeId
+  const isBackedge = !!row.backedge
   const body = renderRow
     ? renderRow({
         node: node ?? { id: row.nodeId, name, parentIds: [] },
         isSelected,
         toggleState: row.toggleState,
         depth: row.renderDepth,
+        backedge: row.backedge
+          ? { path: row.backedge.path, selfLoop: row.backedge.selfLoop }
+          : undefined,
       })
-    : <span className="dbw-name">{name}</span>
+    : isBackedge
+      ? <BackedgeMarker name={name} selfLoop={row.backedge!.selfLoop} />
+      : <span className="dbw-name">{name}</span>
 
   return (
     <div
-      className="dbw-row"
+      className={isBackedge ? 'dbw-row dbw-backedge' : 'dbw-row'}
       style={{ background: depthTint(row.renderDepth) }}
     >
       {row.rails.map((kind, idx) => (
@@ -286,6 +299,19 @@ function Row({
         }
       />
       {body}
+      {row.backedge && !row.backedge.selfLoop && (
+        <LinkList
+          prefix="⟲ loops back to"
+          links={[
+            {
+              path: row.backedge.path,
+              targetPosIdx: row.backedge.targetPosIdx,
+            },
+          ]}
+          title="Click to scroll to the ancestor this loops back to"
+          onClick={onReveal}
+        />
+      )}
       <LinkList
         prefix="↳ reveal at"
         links={row.revealAt}
@@ -299,6 +325,26 @@ function Row({
         onClick={onReveal}
       />
     </div>
+  )
+}
+
+// Default body for a cycle back-edge row: a non-navigational marker. The loop
+// target itself is shown as a clickable "⟲ loops back to …" link alongside
+// (except for self-loops, where the target is the immediate parent right above).
+function BackedgeMarker({
+  name,
+  selfLoop,
+}: {
+  name: string
+  selfLoop: boolean
+}) {
+  return (
+    <span className="dbw-name dbw-backedge-name">
+      ⟲ {name}{' '}
+      <span className="dbw-backedge-note">
+        ({selfLoop ? 'self-loop' : 'cycle — shown above'})
+      </span>
+    </span>
   )
 }
 

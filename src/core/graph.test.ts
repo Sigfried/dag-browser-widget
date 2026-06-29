@@ -58,6 +58,35 @@ describe('buildGraph', () => {
     expect(() => g.depth('P')).not.toThrow()
   })
 
+  it('promotes a synthetic root for a rootless cycle (no parentless entry)', () => {
+    // P ↔ Q with no outside entry: neither is parentless, so without a fallback
+    // the whole component would vanish. One of them must become a root.
+    const g = buildGraph([
+      { id: 'P', name: 'P', parentIds: ['Q'] },
+      { id: 'Q', name: 'Q', parentIds: ['P'] },
+    ])
+    expect(g.roots.length).toBe(1)
+    expect(['P', 'Q']).toContain(g.roots[0])
+    // Every node is now reachable in the unfolding.
+    const seen = new Set(fullUnfolding(g).map(r => r.nodeId))
+    expect(seen.has('P')).toBe(true)
+    expect(seen.has('Q')).toBe(true)
+  })
+
+  it('keeps natural roots and only promotes orphaned components', () => {
+    // A normal rooted tree PLUS a separate rootless 2-cycle (X↔Y).
+    const g = buildGraph([
+      { id: 'root', name: 'root', parentIds: [] },
+      { id: 'child', name: 'child', parentIds: ['root'] },
+      { id: 'X', name: 'X', parentIds: ['Y'] },
+      { id: 'Y', name: 'Y', parentIds: ['X'] },
+    ])
+    // 'root' stays a root; exactly one of X/Y is promoted.
+    expect(g.roots).toContain('root')
+    expect(g.roots.length).toBe(2)
+    expect(g.roots.some(r => r === 'X' || r === 'Y')).toBe(true)
+  })
+
   it('orders children by trailing number then name', () => {
     const g = buildGraph([
       { id: 'root', name: 'root', parentIds: [] },
@@ -110,5 +139,41 @@ describe('fullUnfolding', () => {
       { id: 'c', name: 'c', parentIds: ['b'] },
     ])
     expect(() => fullUnfolding(g)).not.toThrow()
+  })
+
+  it('emits a back-edge marker row for a cycle, pointing at the ancestor', () => {
+    // root → a → b → c → a   (c's child a loops back to its ancestor a)
+    const g = buildGraph([
+      { id: 'root', name: 'root', parentIds: [] },
+      { id: 'a', name: 'a', parentIds: ['root', 'c'] },
+      { id: 'b', name: 'b', parentIds: ['a'] },
+      { id: 'c', name: 'c', parentIds: ['b'] },
+    ])
+    const rows = fullUnfolding(g)
+    const back = rows.filter(r => r.kind === 'backedge')
+    expect(back).toHaveLength(1)
+    expect(back[0].nodeId).toBe('a')
+    // It loops back to the ancestor 'a' row (the real unfolded copy).
+    const aRow = rows.findIndex(r => r.nodeId === 'a' && r.kind === 'node')
+    expect(back[0].backedgeTo).toBe(aRow)
+  })
+
+  it('emits a self-loop back-edge whose target is the immediate parent', () => {
+    // root → a → a   (a is its own child as well as root's)
+    const g = buildGraph([
+      { id: 'root', name: 'root', parentIds: [] },
+      { id: 'a', name: 'a', parentIds: ['root', 'a'] },
+    ])
+    const rows = fullUnfolding(g)
+    const back = rows.filter(r => r.kind === 'backedge')
+    expect(back).toHaveLength(1)
+    expect(back[0].nodeId).toBe('a')
+    expect(back[0].backedgeTo).toBe(back[0].parentIdx)
+  })
+
+  it('marks ordinary rows kind:node', () => {
+    const g = buildGraph(NODES)
+    const rows = fullUnfolding(g)
+    expect(rows.every(r => r.kind === 'node')).toBe(true)
   })
 })

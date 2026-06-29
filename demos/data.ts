@@ -118,7 +118,56 @@ export const GENRES: Node[] = [
   },
 ]
 
-export type DemoKey = 'genres' | 'files'
+// ---------------------------------------------------------------------------
+// Demo 3: a dependency digraph WITH cycles. Software package "depends on"
+// edges form a directed graph that is not acyclic: a few packages depend on
+// each other (directly or transitively). The widget unfolds each package once;
+// when a dependency loops back to a package already on the path, it shows a
+// "⟲ loops back to …" back-edge marker instead of recursing forever. The
+// self-referential `recursive-helper` (depends on itself) shows the self-loop
+// case. Synthetic, public, non-informatics data.
+// ---------------------------------------------------------------------------
+// Convention (same as the other demos): a node's `parentIds` are the nodes
+// that sit ABOVE it in the tree. Reading top-down, "X is a parent of Y" means
+// the widget can show Y nested under X. The interesting structure:
+//   • A 2-cycle:    core → utils → core
+//   • A 3-hop cycle: store → events → dispatch → store
+//   • A self-loop:   recursive-helper → recursive-helper
+//   • A plain DAG diamond: utils also sits under store, so it gets a real
+//     "★ also under" link in addition to its cycle marker.
+// To make a child loop back UP to an ancestor, that ancestor is listed among
+// the descendant's parentIds (so the descendant becomes a "parent" of the
+// ancestor, closing the loop). The unfolder detects this on descent and shows
+// a "⟲ loops back to …" marker instead of recursing.
+export const DEPS: Node[] = [
+  { id: 'app', name: 'app', parentIds: [] },
+
+  // app → ui → theme → tokens  (an ordinary acyclic branch)
+  { id: 'ui', name: 'ui', parentIds: ['app'] },
+  { id: 'theme', name: 'theme', parentIds: ['ui'] },
+  { id: 'tokens', name: 'tokens', parentIds: ['theme'] },
+
+  // core ↓ utils ↓ (back to core): the 2-cycle. core is under app; utils is
+  // under core AND under store (the diamond → "★ also under"); core is also
+  // under utils, which closes the loop.
+  { id: 'core', name: 'core', parentIds: ['app', 'utils'] },
+  { id: 'utils', name: 'utils', parentIds: ['core', 'store'] },
+
+  // store → events → dispatch → store: the 3-hop cycle. dispatch is under
+  // events (under store); store is also under dispatch, closing the loop.
+  { id: 'store', name: 'store', parentIds: ['app', 'dispatch'] },
+  { id: 'events', name: 'events', parentIds: ['store'] },
+  { id: 'dispatch', name: 'dispatch', parentIds: ['events'] },
+
+  // A self-loop: a package that lists itself as a dependency.
+  {
+    id: 'recursive-helper',
+    name: 'recursive-helper',
+    parentIds: ['tokens', 'recursive-helper'],
+  },
+]
+
+export type DemoKey = 'genres' | 'files' | 'deps'
 
 export type DemoConfig = {
   label: string
@@ -152,5 +201,18 @@ export const DEMOS: Record<DemoKey, DemoConfig> = {
       'A plain tree (every file has one parent). No “also under” links here — ' +
       'this shows the widget behaves as an ordinary collapsible file browser ' +
       'when the data is a pure tree.',
+  },
+  deps: {
+    label: 'Dependencies (cyclic)',
+    nodes: DEPS,
+    selected: [],
+    blurb:
+      'A directed graph that is NOT acyclic. Some packages depend on each ' +
+      'other (core ⇄ utils), some form longer loops (store → events → ' +
+      'dispatch → store), and one depends on itself (recursive-helper). The ' +
+      'widget unfolds each package once; where a dependency loops back to a ' +
+      'package already on the path, it shows a “⟲ loops back to …” marker ' +
+      'instead of recursing forever. `utils` also sits under two parents, so ' +
+      'it carries a normal “★ also under …” link too.',
   },
 }
