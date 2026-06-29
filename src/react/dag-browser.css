@@ -7,6 +7,43 @@
   padding: 8px 12px;
   border-radius: 4px;
   border: 1px solid #e5e7eb;
+  /* Anchor the transient cross-reference arrow overlay. */
+  position: relative;
+}
+
+/* Transient SVG arrow drawn from a cross-ref link to its target row (shown
+   while hovering/clicking a "★ also under" / "⟲ loops back to" link). */
+.dbw-arrow-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 2;
+}
+.dbw-arrow-path {
+  fill: none;
+  stroke: #1d4ed8;
+  stroke-width: 1.5;
+  opacity: 0.85;
+}
+.dbw-arrow-head {
+  fill: #1d4ed8;
+  opacity: 0.85;
+}
+
+/* Flash a target row when a cross-ref scrolls it into view. */
+@keyframes dbw-flash {
+  0% {
+    background-color: rgba(29, 78, 216, 0.28);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.dbw-flash {
+  animation: dbw-flash 1.1s ease-out;
 }
 
 /* Collapse via grid-template-rows 0fr <-> 1fr — no JS height measurement. */
@@ -48,6 +85,14 @@
 .dbw-backedge-note {
   font-size: 11px;
   color: #9ca3af;
+}
+/* The ⟲ loop glyph reads better larger and upright (not italic) versus the
+   italic link text around it. */
+.dbw-loop-glyph {
+  font-size: 25px;
+  line-height: 1;
+  vertical-align: -2px;
+  font-style: normal;
 }
 
 /* Cross-reference links ("★ also under", "↳ reveal at"). */

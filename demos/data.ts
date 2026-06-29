@@ -165,6 +165,13 @@ export const DEPS: Node[] = [
     name: 'recursive-helper',
     parentIds: ['tokens', 'recursive-helper'],
   },
+
+  // A widely-shared leaf: `logger` sits under THREE parents (app, core, store),
+  // so each of its copies after the first shows TWO "★ also under" links —
+  // hover the row to see multiple arrows fan out at once. `config` is similar
+  // (under app + ui + events) to give a second multi-parent example.
+  { id: 'logger', name: 'logger', parentIds: ['app', 'core', 'store'] },
+  { id: 'config', name: 'config', parentIds: ['app', 'ui', 'events'] },
 ]
 
 export type DemoKey = 'genres' | 'files' | 'deps'
@@ -212,7 +219,9 @@ export const DEMOS: Record<DemoKey, DemoConfig> = {
       'dispatch → store), and one depends on itself (recursive-helper). The ' +
       'widget unfolds each package once; where a dependency loops back to a ' +
       'package already on the path, it shows a “⟲ loops back to …” marker ' +
-      'instead of recursing forever. `utils` also sits under two parents, so ' +
-      'it carries a normal “★ also under …” link too.',
+      'instead of recursing forever. `logger` and `config` sit under three ' +
+      'parents, so they carry several “★ also under …” links. Hover any row to ' +
+      'draw arrows to its other copies; click a link to jump there (this demo ' +
+      'shows a toast via onMessage instead of the built-in flash).',
   },
 }

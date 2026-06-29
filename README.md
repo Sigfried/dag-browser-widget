@@ -132,9 +132,39 @@ semantics — all of which differ per app.
 | `renderRow` | `(ctx: RenderRowContext) => ReactNode` | name only | Renders each row's body. |
 | `levelsExpanded` | `number` | `1` | How many levels to open on mount. `1` shows the roots' children; `0` = all collapsed. Initial-state only. |
 | `animationMs` | `number` | `220` | Collapse/expand duration; `0` disables. |
+| `onMessage` | `(msg: DagBrowserMessage) => void` | — | Feedback when a cross-ref link is followed (see below). |
 | `className` | `string` | — | Added to the root element. |
 
-`RenderRowContext` = `{ node, isSelected, toggleState, depth }`.
+`RenderRowContext` = `{ node, isSelected, toggleState, depth, backedge? }`.
+`backedge` is `{ path, selfLoop }` on a cycle row (else `undefined`), so a custom
+`renderRow` can style loop-back rows itself.
+
+### Cross-reference links: arrows and `onMessage`
+
+The italic links on a row — **"★ also under …"**, **"⟲ loops back to …"**,
+**"↳ reveal at …"** — all point at another copy/ancestor of that node elsewhere
+in the tree. Two affordances help you see and follow them:
+
+- **Hover** a row (or a single link) to draw a transient curved **arrow** from
+  the row to its target(s). Hovering the row body shows every arrow that row
+  has at once; hovering one link shows just that one. The arrows are drawn on
+  hover and cleared on leave — no persistent layout tracking.
+- **Click** a link to follow it. If the target is off-screen it's pinned
+  visible, scrolled to, and flashed; if it's already on screen the click just
+  scrolls+flashes it (so it never looks like a dead click). Pass `onMessage` to
+  substitute your own feedback (a toast/snackbar) — when you do, the built-in
+  flash is suppressed so feedback isn't doubled. The widget still scrolls the
+  target into view either way.
+
+```ts
+type DagBrowserMessage = {
+  kind: 'already-visible' | 'revealed' // was the target already on screen?
+  targetId: string                     // node id of the target copy
+  targetPosIdx: number                 // its position in the unfolding
+  targetPath: string                   // slash-joined path shown on the link
+  direction: 'up' | 'down'             // is the target above or below the click?
+}
+```
 
 ### `nodes` changes restart the widget
 

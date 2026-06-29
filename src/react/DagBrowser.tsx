@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import {
   ancestorPath,
   buildGraph,
@@ -12,7 +18,14 @@ import {
   type ForceVisibleSet,
   type Node,
 } from '../core'
-import { COLORS, LinkList, RailCell, TogglePill, depthTint } from './parts'
+import {
+  COLORS,
+  LinkList,
+  RailCell,
+  TogglePill,
+  depthTint,
+  type XrefLink,
+} from './parts'
 import './dag-browser.css'
 
 // Context handed to the consumer's renderRow. Everything it needs to render a
@@ -54,10 +67,47 @@ export type DagBrowserProps = {
   levelsExpanded?: number
   /** Collapse/expand animation duration in ms. 0 disables animation. */
   animationMs?: number
+  /**
+   * Called when the user clicks a cross-reference link ("★ also under …",
+   * "⟲ loops back to …", "↳ reveal at …"). Lets the consumer show their own
+   * transient feedback (a toast/snackbar) — e.g. when the target is already
+   * on screen, so the click would otherwise look like it did nothing. The
+   * widget still scrolls the target into view regardless; providing this
+   * suppresses the built-in flash so feedback isn't doubled.
+   */
+  onMessage?: (msg: DagBrowserMessage) => void
   className?: string
 }
 
+/** Emitted to `onMessage` when a cross-reference link is followed. */
+export type DagBrowserMessage = {
+  /**
+   * 'already-visible' — the target copy was already on screen; the click just
+   *   scrolled to it. This is the case worth surfacing to the user.
+   * 'revealed' — the target was hidden and has now been pinned visible.
+   */
+  kind: 'already-visible' | 'revealed'
+  /** The node id of the target copy. */
+  targetId: string
+  /** The unfolding posIdx of the target copy. */
+  targetPosIdx: number
+  /**
+   * Slash-joined path shown on the clicked link (e.g. "app/core"). Use this
+   * rather than just the node name when phrasing feedback.
+   */
+  targetPath: string
+  /**
+   * Where the target sits relative to the clicked row, in render order:
+   * 'up' = above it, 'down' = below it. (For an 'already-visible' target this
+   * is what tells you whether to say "shown above ↑" or "shown below ↓".)
+   */
+  direction: 'up' | 'down'
+}
+
 const EMPTY: string[] = []
+
+// Geometry of one transient cross-ref arrow, in root-relative coordinates.
+type ArrowGeom = { x1: number; y1: number; x2: number; y2: number }
 
 // A change of `nodes` means "different data — start over". We express that by
 // remounting: the outer component keys the inner impl on the `nodes` array
@@ -79,6 +129,7 @@ function DagBrowserImpl({
   renderRow,
   levelsExpanded = 1,
   animationMs = 220,
+  onMessage,
   className,
 }: DagBrowserProps) {
   const graph = useMemo(() => buildGraph(nodes), [nodes])
@@ -145,6 +196,77 @@ function DagBrowserImpl({
     if (exitingRef.current.delete(posIdx)) forceRerender(n => n + 1)
   }
 
+  // --- Cross-reference navigation: refs, scroll+flash, transient arrow ------
+  // The container (arrow overlay is positioned against it) and a live map of
+  // posIdx -> row element, so a cross-ref click/hover can locate its target.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const rowElsRef = useRef<Map<number, HTMLElement>>(new Map())
+  const registerRow = useCallback((posIdx: number, el: HTMLElement | null) => {
+    if (el) rowElsRef.current.set(posIdx, el)
+    else rowElsRef.current.delete(posIdx)
+  }, [])
+
+  // Transient arrows from a hovered row/link to its target row(s). Coordinates
+  // are measured relative to the root on hover and cleared on leave; nothing is
+  // kept in sync across layout changes (steady state stays measurement-free). A
+  // row can point at several targets at once (multiple "★ also under" links).
+  const [arrows, setArrows] = useState<ArrowGeom[]>([])
+
+  // Briefly flash a row element (target of a cross-ref) by toggling a class.
+  const flashRow = useCallback((el: HTMLElement) => {
+    el.classList.remove('dbw-flash')
+    // Force reflow so re-adding the class restarts the animation.
+    void el.offsetWidth
+    el.classList.add('dbw-flash')
+    const clear = () => el.classList.remove('dbw-flash')
+    el.addEventListener('animationend', clear, { once: true })
+  }, [])
+
+  // Scroll a target row into view (centered) and flash it. Returns false if the
+  // row isn't currently in the DOM (caller may need to reveal it first).
+  const scrollAndFlash = useCallback(
+    (targetPosIdx: number, flash: boolean) => {
+      const el = rowElsRef.current.get(targetPosIdx)
+      if (!el) return false
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (flash) flashRow(el)
+      return true
+    },
+    [flashRow],
+  )
+
+  // Draw transient arrows from a source row to each of its target rows. Both
+  // rects are taken relative to the root container. Targets not currently in the
+  // DOM are skipped.
+  const showArrows = useCallback(
+    (fromPosIdx: number, targetPosIdxs: number[]) => {
+      const root = rootRef.current
+      const fromEl = rowElsRef.current.get(fromPosIdx)
+      if (!root || !fromEl) return
+      const r = root.getBoundingClientRect()
+      const f = fromEl.getBoundingClientRect()
+      const y1 = f.top - r.top + f.height / 2
+      const x1 = f.left - r.left
+      const geoms: ArrowGeom[] = []
+      for (const target of targetPosIdxs) {
+        const toEl = rowElsRef.current.get(target)
+        if (!toEl) continue
+        const t = toEl.getBoundingClientRect()
+        // Start/end at the left edge of each row, vertically centered — the
+        // curve bows out to the left.
+        geoms.push({
+          x1,
+          y1,
+          x2: t.left - r.left,
+          y2: t.top - r.top + t.height / 2,
+        })
+      }
+      setArrows(geoms)
+    },
+    [],
+  )
+  const clearArrows = useCallback(() => setArrows([]), [])
+
   // --- Interaction ----------------------------------------------------------
 
   function handleToggle(posIndex: number, state: DecoratedRow['toggleState']) {
@@ -187,9 +309,30 @@ function DagBrowserImpl({
     })
   }
 
-  // Reveal a hidden copy (clicked from an also-under / reveal-at link): pin it.
-  function reveal(targetPosIdx: number) {
+  // Follow a cross-reference link (also-under / reveal-at / loops-back). If the
+  // target is already on screen, just scroll+flash it and report 'already-
+  // visible' (the dead-click case). Otherwise pin it, then scroll+flash once it
+  // mounts and report 'revealed'. When the consumer supplies onMessage we skip
+  // the built-in flash so feedback isn't doubled. `sourcePosIdx` is the row the
+  // link was clicked from — used only to report up/down direction.
+  function reveal(link: XrefLink, sourcePosIdx: number) {
+    const { targetPosIdx, path: targetPath } = link
+    const targetId = unfolding[targetPosIdx]?.nodeId ?? ''
+    // Rows render in ascending posIdx order, so a lower target posIdx is above.
+    const direction: 'up' | 'down' =
+      targetPosIdx < sourcePosIdx ? 'up' : 'down'
+    const flash = !onMessage
+    clearArrows()
+    const msg = { targetId, targetPosIdx, targetPath, direction } as const
+    if (visible.has(targetPosIdx)) {
+      scrollAndFlash(targetPosIdx, flash)
+      onMessage?.({ kind: 'already-visible', ...msg })
+      return
+    }
     setForceVisible(prev => withAdded(prev, targetPosIdx))
+    onMessage?.({ kind: 'revealed', ...msg })
+    // The row mounts on the next commit; scroll+flash after it exists.
+    requestAnimationFrame(() => scrollAndFlash(targetPosIdx, flash))
   }
 
   if (nodes.length === 0) {
@@ -198,6 +341,7 @@ function DagBrowserImpl({
 
   return (
     <div
+      ref={rootRef}
       className={joinClass('dbw-root', className)}
       style={{ '--dbw-anim': `${animationMs}ms` } as React.CSSProperties}
     >
@@ -214,14 +358,49 @@ function DagBrowserImpl({
               node={graph.node(row.nodeId)}
               isSelected={selectedSet.has(row.nodeId)}
               renderRow={renderRow}
+              registerRow={registerRow}
               onToggle={() => handleToggle(row.posIndex, row.toggleState)}
               onExpandAll={() => handleExpandAll(row.posIndex)}
               onReveal={reveal}
+              onXrefHover={targets => showArrows(row.posIndex, targets)}
+              onXrefLeave={clearArrows}
             />
           </CollapsibleRow>
         )
       })}
+      {arrows.length > 0 && (
+        <svg className="dbw-arrow-overlay">
+          {arrows.map((g, i) => (
+            <XrefArrow key={i} {...g} />
+          ))}
+        </svg>
+      )}
     </div>
+  )
+}
+
+// One transient curved arrow drawn over the tree, from a cross-ref link's row
+// to the target row it points at. Bows out to the LEFT (into the gutter margin)
+// so it doesn't cross the row text. Pure SVG, no measurement upkeep — it lives
+// only while a row/link is hovered.
+function XrefArrow({ x1, y1, x2, y2 }: ArrowGeom) {
+  // Control-point offset: bow left proportional to the vertical span, with a
+  // generous floor so even a one-row jump bows out enough to read clearly.
+  const span = Math.abs(y2 - y1)
+  const bow = Math.min(44 + span * 0.18, 120)
+  const cx1 = x1 - bow
+  const cx2 = x2 - bow
+  const d = `M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`
+  // Arrowhead at the target end, pointing right (toward the row).
+  const a = 5
+  return (
+    <g>
+      <path className="dbw-arrow-path" d={d} />
+      <path
+        className="dbw-arrow-head"
+        d={`M ${x2} ${y2} L ${x2 - a} ${y2 - a} L ${x2 - a} ${y2 + a} Z`}
+      />
+    </g>
   )
 }
 
@@ -253,17 +432,23 @@ function Row({
   node,
   isSelected,
   renderRow,
+  registerRow,
   onToggle,
   onExpandAll,
   onReveal,
+  onXrefHover,
+  onXrefLeave,
 }: {
   row: DecoratedRow
   node: Node | undefined
   isSelected: boolean
   renderRow?: (ctx: RenderRowContext) => ReactNode
+  registerRow: (posIdx: number, el: HTMLElement | null) => void
   onToggle: () => void
   onExpandAll: () => void
-  onReveal: (targetPosIdx: number) => void
+  onReveal: (link: XrefLink, sourcePosIdx: number) => void
+  onXrefHover: (targetPosIdxs: number[]) => void
+  onXrefLeave: () => void
 }) {
   const name = node?.name ?? row.nodeId
   const isBackedge = !!row.backedge
@@ -281,10 +466,32 @@ function Row({
       ? <BackedgeMarker name={name} selfLoop={row.backedge!.selfLoop} />
       : <span className="dbw-name">{name}</span>
 
+  // Shared props for every cross-ref LinkList: click reveals/scrolls, hovering
+  // a single link previews just that one connection.
+  const xref = {
+    onClick: (link: XrefLink) => onReveal(link, row.posIndex),
+    onHover: (t: number) => onXrefHover([t]),
+    onLeave: onXrefLeave,
+  }
+
+  // Every target this row points at (for hovering anywhere on the row, not just
+  // a single link): the loop-back/self-loop target on a back-edge row (a self-
+  // loop's target is the parent right above, which has no link of its own —
+  // including it here is what gives self-loops an arrow), plus all also-under
+  // and reveal-at targets. Multiple targets draw multiple arrows at once.
+  const allTargets = row.backedge
+    ? [row.backedge.targetPosIdx]
+    : [...row.alsoUnderPaths, ...row.revealAt].map(l => l.targetPosIdx)
+
   return (
     <div
+      ref={el => registerRow(row.posIndex, el)}
       className={isBackedge ? 'dbw-row dbw-backedge' : 'dbw-row'}
       style={{ background: depthTint(row.renderDepth) }}
+      onMouseEnter={
+        allTargets.length ? () => onXrefHover(allTargets) : undefined
+      }
+      onMouseLeave={allTargets.length ? onXrefLeave : undefined}
     >
       {row.rails.map((kind, idx) => (
         <RailCell key={idx} kind={kind} />
@@ -301,7 +508,11 @@ function Row({
       {body}
       {row.backedge && !row.backedge.selfLoop && (
         <LinkList
-          prefix="⟲ loops back to"
+          prefix={
+            <>
+              <span className="dbw-loop-glyph">⟲</span> loops back to
+            </>
+          }
           links={[
             {
               path: row.backedge.path,
@@ -309,20 +520,20 @@ function Row({
             },
           ]}
           title="Click to scroll to the ancestor this loops back to"
-          onClick={onReveal}
+          {...xref}
         />
       )}
       <LinkList
         prefix="↳ reveal at"
         links={row.revealAt}
         title="Click to reveal this selected node in the tree"
-        onClick={onReveal}
+        {...xref}
       />
       <LinkList
         prefix="★ also under"
         links={row.alsoUnderPaths}
         title="Click to reveal this copy in the tree"
-        onClick={onReveal}
+        {...xref}
       />
     </div>
   )
@@ -340,7 +551,7 @@ function BackedgeMarker({
 }) {
   return (
     <span className="dbw-name dbw-backedge-name">
-      ⟲ {name}{' '}
+      <span className="dbw-loop-glyph">⟲</span> {name}{' '}
       <span className="dbw-backedge-note">
         ({selfLoop ? 'self-loop' : 'cycle — shown above'})
       </span>

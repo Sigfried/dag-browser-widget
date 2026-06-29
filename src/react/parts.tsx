@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from 'react'
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import type { RailKind, ToggleState } from '../core'
 
 export const RAIL_CELL_WIDTH = 18
@@ -174,14 +174,26 @@ export function TogglePill({
 // Cross-reference link lists ("★ also under …", "↳ reveal at …").
 // ----------------------------------------------------------------------------
 
+export type XrefLink = { path: string; targetPosIdx: number }
+
 type LinkListProps = {
-  prefix: string
-  links: { path: string; targetPosIdx: number }[]
+  prefix: ReactNode
+  links: XrefLink[]
   title: string
-  onClick: (targetPosIdx: number) => void
+  onClick: (link: XrefLink) => void
+  // Hovering a link previews the connection to its target row (transient arrow).
+  onHover?: (targetPosIdx: number) => void
+  onLeave?: () => void
 }
 
-export function LinkList({ prefix, links, title, onClick }: LinkListProps) {
+export function LinkList({
+  prefix,
+  links,
+  title,
+  onClick,
+  onHover,
+  onLeave,
+}: LinkListProps) {
   if (links.length === 0) return null
   return (
     <span
@@ -198,7 +210,9 @@ export function LinkList({ prefix, links, title, onClick }: LinkListProps) {
           {idx > 0 && ', '}
           <span
             className="dbw-xref"
-            onClick={() => onClick(link.targetPosIdx)}
+            onClick={() => onClick(link)}
+            onMouseEnter={() => onHover?.(link.targetPosIdx)}
+            onMouseLeave={onLeave}
             title={title}
           >
             {link.path}

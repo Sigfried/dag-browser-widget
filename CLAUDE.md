@@ -103,6 +103,24 @@ These were settled deliberately (see git history / the original handoff):
   after the natural roots). Without this, such a component vanishes entirely.
   With a single overall root (as the demos and most consumers use) this never
   fires, but it's the safety net for arbitrary digraphs.
+- **Cross-ref arrows are transient and measurement-free.** Hovering a row (or
+  one of its "★ also under" / "⟲ loops back to" / "↳ reveal at" links) draws SVG
+  arrows from that row to its target row(s), measured against the root container
+  at hover time and cleared on leave. There is NO ResizeObserver / scroll
+  listener / per-frame upkeep — this deliberately preserves the "no JS
+  measurement in steady state" stance. Row-body hover shows all of a row's
+  targets at once; single-link hover shows just one. A self-loop row's target is
+  the parent right above it (it has no link), but it still gets a row-hover
+  arrow. `rowElsRef` (posIdx → element, via the `registerRow` ref callback) is
+  the lookup both the arrows and scroll-to use.
+- **Click feedback via `onMessage`, consumer-overridable.** Clicking a cross-ref
+  scrolls+flashes the target. If it was already visible, that's the only effect
+  (the dead-click case). `onMessage?: (DagBrowserMessage) => void` lets a
+  consumer show their own toast instead; when provided, the built-in flash is
+  suppressed (scroll still happens) so feedback isn't doubled. The message
+  carries `targetPath` and `direction: 'up'|'down'` (computed from render order)
+  so the consumer can phrase "shown above/below" correctly — don't regress that
+  to a bare node name.
 
 ## Origin
 
